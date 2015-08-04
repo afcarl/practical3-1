@@ -1,6 +1,5 @@
 require 'mobdebug'.start()
 
-require 'torch'
 require 'optim'
 
 
@@ -17,23 +16,27 @@ require 'optim'
 
 -- preallocate space for gradient, which is 1-dim and 1 element
 -- (since f is univariate)
-local grad = torch.Tensor{0}
+local grad = {{0,0},{0,0}}
 
 -- return function's value and the gradient, at a given point x_vec
 local function feval(x_vec)
     -- note: x_vec is a Tensor of 1-dim and size 1, so 
     -- we get its one and only element:
-    local x = x_vec[1]
+    local x = x_vec[1][1] + x_vec[2][1] + x_vec[1][2] + x_vec[2][2]
 
     -- compute and return func val (scalar), and gradient (Tensor)
     f = 0.5*x^2 + x*torch.sin(x)
-    grad[1] = x + torch.sin(x) + x*torch.cos(x)
+    grad[1][1] = x + torch.sin(x) + x*torch.cos(x)
+    grad[2][1] = x + torch.sin(x) + x*torch.cos(x)
+    grad[1][2] = x + torch.sin(x) + x*torch.cos(x)
+    grad[2][2] = x + torch.sin(x) + x*torch.cos(x)
     return f, grad
 end
 
 -- where to start the algorithm (usually random, but here we won't since it's a demo)
 -- NOTE: try a few starting points, using the plot for pointers
-local x = torch.Tensor{5}
+local x = torch.Tensor({{-3,6},{-2,4}})
+
 
 -- optim functions use this table for bookkeeping and for reading options
 local state = { learningRate = 1e-2 }
@@ -53,6 +56,6 @@ while true do
     iter = iter + 1
 end
 
-print(string.format("%.6f", x[1]))
+print(x)
 
 

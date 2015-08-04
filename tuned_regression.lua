@@ -4,7 +4,7 @@
 -- to run: th -i practical3.lua
 -- or:     luajit -i practical3.lua
 ---------------------------------------------------------------------------------------
-
+require 'mobdebug'.start()
 require 'torch'
 require 'math'
 require 'nn'
@@ -22,10 +22,10 @@ torch.manualSeed(1)    -- fix random seed so program runs the same every time
 -- NOTE: see below for optimState, storing optimiser settings
 local opt = {}         -- these options are used throughout
 opt.optimization = 'sgd'
-opt.batch_size = 3
-opt.train_size = 8000  -- set to 0 or 60000 to use all 60000 training data
-opt.test_size = 0      -- 0 means load all data
-opt.epochs = 2         -- **approximate** number of passes through the training data (see below for the `iterations` variable, which is calculated from this)
+opt.batch_size = 5
+opt.train_size = 100  -- set to 0 or 60000 to use all 60000 training data
+opt.test_size = 10      -- 0 means load all data
+opt.epochs = 10         -- **approximate** number of passes through the training data (see below for the `iterations` variable, which is calculated from this)
 
 -- NOTE: the code below changes the optimization algorithm used, and its settings
 local optimState       -- stores a lua table with the optimization algorithm's settings, and state during iterations
@@ -41,8 +41,8 @@ if opt.optimization == 'lbfgs' then
 elseif opt.optimization == 'sgd' then
   optimState = {
     learningRate = 1e-1,
-    weightDecay = 0,
-    momentum = 0,
+    weightDecay = 1e-5,
+    momentum = 1e-1,
     learningRateDecay = 1e-7
   }
   optimMethod = optim.sgd
@@ -163,6 +163,42 @@ local feval = function(x)
   local dloss_doutput = criterion:backward(batch_outputs, batch_targets) 
   -- 4. use gradients to update weights, we'll understand this step more next week
   model:backward(batch_inputs, dloss_doutput)
+  
+  -------- adding grad check
+  local initial_parameters = parameters:clone()
+  local initial_grad_parameters = gradParameters:clone()
+  local initial_batch_outputs = model:forward(batch_inputs)
+  local initial_batch_loss = criterion:forward(initial_batch_outputs, batch_targets)
+  local grad_estimate = {}
+  
+  for i = 1, parameters:size(1) do 
+      parameters[{}] = initial_parameters
+      dw = 0.001
+      
+      parameters[i] = parameters[i] + dw
+      
+      local current_batch_outputs = model:forward(batch_inputs)
+      local current_batch_loss = criterion:forward(current_batch_outputs, batch_targets)
+      local deriv_estimate = (current_batch_loss - initial_batch_loss)/dw
+      grad_estimate[#grad_estimate + 1] = deriv_estimate
+      
+  end
+  
+  for i = 1, gradParameters:size(1) do 
+    if math.abs(grad_estimate[i] - gradParameters[i]) > 0.000001 then
+      print(string.format("difference for %i th element is %6.6f , %6.6f",i, grad_estimate[i], gradParameters[i]))
+    end
+  end
+  parameters[{}] = initial_parameters
+  
+  
+  ---- grad check finished
+  
+  
+  
+  
+  
+  -------
 
   -- optim expects us to return
   --     loss, (gradient of loss with respect to the weights that we're optimizing)
@@ -173,6 +209,8 @@ end
 -- OPTIMIZE: FIRST HANDIN ITEM
 ------------------------------------------------------------------------
 local losses = {}          -- training losses for each iteration/minibatch
+local test_losses = {}
+
 local epochs = opt.epochs  -- number of full passes over all the training data
 local iterations = epochs * math.ceil(n_train_data / opt.batch_size) -- integer number of minibatches to process
 -- (note: number of training data might not be divisible by the batch size, so we round up)
@@ -208,6 +246,13 @@ for i = 1, iterations do
   -- is the same as torch.linspace(1, #losses, #losses).
 
   losses[#losses + 1] = minibatch_loss[1] -- append the new loss
+  
+  local test_out = model:forward(test.data)
+  local test_loss = criterion:forward(test_out, test.labels)
+  test_losses[#test_losses+1] = test_loss
+  print(string.format("test loss: loss = %6.6f", test_loss))
+  print(test_loss)
+  
 end
 
 -- TODO: for the first handin item, evaluate test loss above, and add to the plot below
@@ -217,6 +262,9 @@ end
 gnuplot.plot({
   torch.range(1, #losses),        -- x-coordinates for data to plot, creates a tensor holding {1,2,3,...,#losses}
   torch.Tensor(losses),           -- y-coordinates (the training losses)
+  '-'},{
+  torch.range(1, #test_losses),        -- x-coordinates for data to plot, creates a tensor holding {1,2,3,...,#losses}
+  torch.Tensor(test_losses),           -- y-coordinates (the training losses)
   '-'})
 
 ------------------------------------------------------------------------------
@@ -227,9 +275,29 @@ local logProbs = model:forward(test.data)
 local classProbabilities = torch.exp(logProbs)
 local _, classPredictions = torch.max(classProbabilities, 2)
 -- classPredictions holds predicted classes from 1-10
+local test_misses = 0
+for i = 1, test.data:size(1) do 
+  if classPredictions[i][1] ~= test.labels[i] then
+    test_misses = test_misses + 1
+  end
+end
+local classification_error_test = test_misses / test.data:size(1)
+print(string.format("classification_error_test %6.6f", classification_error_test))
+  
 
+local logProbs = model:forward(train.data)
+local classProbabilities = torch.exp(logProbs)
+local _, classPredictions = torch.max(classProbabilities, 2)
+-- classPredictions holds predicted classes from 1-10
+local train_misses = 0
+for i = 1, train.data:size(1) do 
+  if classPredictions[i][1] ~= train.labels[i] then
+    train_misses = train_misses + 1
+  end
+end
+local classification_error_train = train_misses / train.data:size(1)
+print(string.format("classification_error_train %6.6f", classification_error_train))
 -- TODO: compute test classification error here for the second handin item
-
 
 local answer
 repeat
